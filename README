@@ -1,0 +1,67 @@
+.. -*- coding: utf-8 -*-
+
+   Copyright 2015 dnf-extra-tests Authors. See the AUTHORS file found
+   in the top-level directory of this distribution and at
+   https://github.com/rholy/dnf-extra-tests/.
+
+   Licensed under the GNU General Public License;
+   either version 2, or (at your option) any later version. See the
+   LICENSE file found in the top-level directory of this distribution
+   and at https://github.com/rholy/dnf-extra-tests/. No part of
+   dnf-extra-tests, including this file, may be copied, modified,
+   propagated, or distributed except according to the terms contained
+   in the LICENSE file.
+
+
+dnf-extra-tests
+===============
+
+dnf-extra-tests is a set of tests which have not been merged into `DNF
+<https://github.com/rpm-software-management/dnf>`_ (yet?).
+
+This serves as an ad hoc solution to where to store scripts that execute
+e.g. integration or system tests that may affect the system on which
+they are running.
+
+These scripts are free and open-source software; see the section License
+to understand the terms and conditions under which you can use, study,
+modify and distribute dnf-extra-tests.
+
+
+Features
+--------
+
+The tests are not in the final shape yet. Further tests are added on
+demand if they fit the purpose of the repository.
+
+
+License
+-------
+
+The project is licensed under the copyleft GNU General Public License;
+either version 2, or (at your option) any later version. See the LICENSE
+file found in the top-level directory of this distribution and at
+https://github.com/rholy/dnf-extra-tests/. No part of dnf-extra-tests,
+including this file, may be copied, modified, propagated, or distributed
+except according to the terms contained in the LICENSE file.
+
+
+Support
+-------
+
+If you are having issues, please report them via the issue tracking
+system. Any feedback is more than welcome.
+
+- issue tracker: https://github.com/rholy/dnf-extra-tests/issues
+
+
+Contributions
+-------------
+
+Since I am a bit demanding person and I want to avoid any unnecessary
+conflicts, I don't accept any contributions. On the other hand, once
+it turns out that there is a potential contributor, I'll move the
+repository under https://github.com/rpm-software-management/ where the
+contributions can be accepted.
+
+- version control system: https://github.com/rholy/dnf-extra-tests
