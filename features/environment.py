@@ -25,6 +25,8 @@ attributes:
     A name of the DNF configuration file.
 :attr:`!backupfn` : :class:`str` | :data:`None`
     A name of the DNF configuration backup file.
+:attr:`!installroot_option` : :data:`types.UnicodeType` | :data:`None`
+    A name of an install root to be configured.
 
 """
 
@@ -62,6 +64,19 @@ def before_all(context):
     with dnf.Base() as base:
         base.read_all_repos()
         base.fill_sack()
+
+
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
+def before_scenario(context, scenario):  # pylint: disable=unused-argument
+    """Do the preparation that must be done before every scenario.
+
+    :param context: the context as described in the environment file
+    :type context: behave.runner.Context
+    :param scenario: the next tested scenario
+    :type scenario: behave.model.Scenario
+
+    """
+    context.installroot_option = None
 
 
 def after_all(context):
