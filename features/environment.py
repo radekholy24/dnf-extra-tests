@@ -75,7 +75,7 @@ def before_all(context):
     with open(context.configfn, 'rb') as configfile, configbackup:
         shutil.copyfileobj(configfile, configbackup)
     context.backupfn = configbackup.name
-    context.repoid = b'dnf-extra-texts'
+    context.repoid = b'dnf-extra-tests'
     # We need a slash at the end so that the urljoin below appends to the URL.
     repoparurl = urllib.pathname2url(os.path.join(repopardn, b''))
     # We need urljoin to avoid a quotation of the variable.
