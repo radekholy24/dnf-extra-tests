@@ -152,6 +152,7 @@ def _test_releasever(context, expected):
        fails
 
     """
+    guest_releasever = '19'
     with dnf.Base() as base:
         reposdn = base.conf.reposdir[0]
         if expected == "the host's release version":
@@ -159,13 +160,13 @@ def _test_releasever(context, expected):
         elif re.match('^“.+?”$', expected):
             releasever = expected[1:-1]
         elif expected == "the guest's release version":
-            releasever = '19'
+            releasever = guest_releasever
         else:
             raise NotImplementedError('expectation not supported')
         if context.installroot_option:
             # Prepare an the install root.
             base.conf.installroot = context.installroot_option
-            base.conf.substitutions['releasever'] = releasever
+            base.conf.substitutions['releasever'] = guest_releasever
             base.read_all_repos()
             base.fill_sack(load_system_repo=False)
             base.install('system-release')

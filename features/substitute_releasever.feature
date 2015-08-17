@@ -32,3 +32,10 @@ Feature: Parametrize repositories by system release version
        | Option        | Value                |
        | --installroot | /tmp/dnf-extra-tests |
      Then I should have the $RELEASEVER configuration variable set to the guest's release version
+
+  Scenario: Assign the user-defined version to $RELEASEVER if specified even if the root is different
+     When I execute DNF with the following configuration:
+       | Option        | Value                |
+       | --installroot | /tmp/dnf-extra-tests |
+       | --releasever  | 20                   |
+     Then I should have the $RELEASEVER configuration variable set to “20”
