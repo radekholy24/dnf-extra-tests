@@ -25,6 +25,7 @@ from __future__ import unicode_literals
 
 import errno
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -58,6 +59,39 @@ def _makedirs(name, exist_ok=False):
             raise
 
 
+def _run_repoquery(repo=None, root=None, releasever=None, quiet=False):
+    """Run the DNF's repoquery plugin from command line.
+
+    The "dnf" executable and its "repoquery" plugin must be available.
+
+    :param repo: a value of the --repo option
+    :type repo: unicode | None
+    :param root: a value of the --installroot option
+    :type root: unicode | None
+    :param releasever: a value of the --releasever option
+    :type releasever: unicode | None
+    :param quiet: set the --queit option
+    :type quiet: bool
+    :returns: the output of the command
+    :rtype: str
+    :raises exceptions.OSError: if the executable cannot be executed
+    :raises subprocess.CalledProcessError: if executable or the plugin
+       fails
+
+    """
+    cmdline = ['dnf', 'repoquery']
+    if repo:
+        cmdline.insert(2, repo)
+        cmdline.insert(2, '--repoid')
+    if releasever:
+        cmdline.insert(1, '--releasever={}'.format(releasever))
+    if quiet:
+        cmdline.insert(1, '--quiet')
+    if root:
+        cmdline.insert(1, '--installroot={}'.format(root))
+    return subprocess.check_output(cmdline)
+
+
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
 @behave.when(  # pylint: disable=no-member
     'I execute DNF with the default configuration')
@@ -89,7 +123,9 @@ def _configure_dnf_customs(context):  # pylint: disable=unused-argument
     if context.table.headings != ['Option', 'Value']:
         raise NotImplementedError('configuration format not supported')
     for option, value in context.table:
-        if option == '--installroot':
+        if option == '--releasever':
+            context.releasever_option = value
+        elif option == '--installroot':
             context.installroot_option = value
         else:
             raise NotImplementedError('configuration not supported')
@@ -97,19 +133,17 @@ def _configure_dnf_customs(context):  # pylint: disable=unused-argument
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
 @behave.then(  # pylint: disable=no-member
-    'I should have the $RELEASEVER configuration variable set to the '
-    "{target}'s release version")
-def _test_releasever(context, target):
+    'I should have the $RELEASEVER configuration variable set to {expected}')
+def _test_releasever(context, expected):
     """Test whether the $RELEASEVER is set to the host's version.
 
     The "dnf" executable and its "repoquery" plugin must be available.
 
     :param context: the context in which the function is called
     :type context: behave.runner.Context
-    :param target: a root which contains a system of the expected
-       release version
-    :type target: unicode
-    :raises dnf.exceptions.DownloadError: if the target cannot be
+    :param expected: a description of the expected release version
+    :type expected: unicode
+    :raises dnf.exceptions.DownloadError: if a testing root cannot be
        configured
     :raises exceptions.OSError: if DNF cannot be configured or if the
        executable cannot be executed
@@ -119,10 +153,16 @@ def _test_releasever(context, target):
 
     """
     with dnf.Base() as base:
-        releasever = dnf.rpm.detect_releasever(base.conf.installroot)
         reposdn = base.conf.reposdir[0]
-        if target == 'guest':
-            releasever = b'19'
+        if expected == "the host's release version":
+            releasever = dnf.rpm.detect_releasever(base.conf.installroot)
+        elif re.match('^“.+?”$', expected):
+            releasever = expected[1:-1]
+        elif expected == "the guest's release version":
+            releasever = '19'
+        else:
+            raise NotImplementedError('expectation not supported')
+        if context.installroot_option:
             # Prepare an the install root.
             base.conf.installroot = context.installroot_option
             base.conf.substitutions['releasever'] = releasever
@@ -132,8 +172,6 @@ def _test_releasever(context, target):
             base.resolve()
             base.download_packages(base.transaction.install_set)
             base.do_transaction()
-        elif target != 'host':
-            raise NotImplementedError('target not supported')
     # Create a repository with a $RELEASEVER in the URL.
     _makedirs(reposdn, exist_ok=True)
     reposrcdn = os.path.join(
@@ -160,13 +198,10 @@ def _test_releasever(context, target):
                 b'metadata_expire=never\n'
                 .format(REPOID.encode('utf-8'), repourl))
             repofile.flush()
-            cmdline = [
-                'dnf', '--quiet', 'repoquery', '--repoid', REPOID]
-            if context.installroot_option:
-                cmdline.insert(
-                    1, '--installroot={}'.format(context.installroot_option))
             try:
-                output = subprocess.check_output(cmdline)
+                output = _run_repoquery(
+                    REPOID, context.installroot_option,
+                    context.releasever_option, quiet=True)
                 assert output.splitlines() == nevras, '$RELEASEVER not correct'
             finally:
                 subprocess.call([

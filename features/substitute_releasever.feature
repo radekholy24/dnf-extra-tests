@@ -21,6 +21,12 @@ Feature: Parametrize repositories by system release version
      When I execute DNF with the default configuration
      Then I should have the $RELEASEVER configuration variable set to the host's release version
 
+  Scenario: Assign the user-defined version to $RELEASEVER if specified
+     When I execute DNF with the following configuration:
+       | Option       | Value |
+       | --releasever | 20    |
+     Then I should have the $RELEASEVER configuration variable set to “20”
+
   Scenario: Assign the guest's version to $RELEASEVER if the root is different
      When I execute DNF with the following configuration:
        | Option        | Value                |

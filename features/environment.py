@@ -25,6 +25,8 @@ attributes:
     A name of the DNF configuration file.
 :attr:`!backupfn` : :class:`str` | :data:`None`
     A name of the DNF configuration backup file.
+:attr:`!releasever_option` : :data:`types.UnicodeType` | :data:`None`
+    A release version to be configured.
 :attr:`!installroot_option` : :data:`types.UnicodeType` | :data:`None`
     A name of an install root to be configured.
 
@@ -76,6 +78,7 @@ def before_scenario(context, scenario):  # pylint: disable=unused-argument
     :type scenario: behave.model.Scenario
 
     """
+    context.releasever_option = None
     context.installroot_option = None
 
 
