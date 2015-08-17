@@ -82,6 +82,22 @@ def before_scenario(context, scenario):  # pylint: disable=unused-argument
     context.installroot_option = None
 
 
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
+def after_scenario(context, scenario):  # pylint: disable=unused-argument
+    """Do the cleanup that must be done after every scenario.
+
+    :param context: the context as described in the environment file
+    :type context: behave.runner.Context
+    :param scenario: the next tested scenario
+    :type scenario: behave.model.Scenario
+    :raises exceptions.OSError: if the configured install root cannot be
+       removed
+
+    """
+    if context.installroot_option:
+        shutil.rmtree(context.installroot_option)
+
+
 def after_all(context):
     """Do the cleanup that can be done at the very end.
 
