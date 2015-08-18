@@ -23,6 +23,7 @@
 from __future__ import absolute_import
 from __future__ import unicode_literals
 
+import contextlib
 import errno
 import os
 import re
@@ -38,6 +39,21 @@ import dnf.rpm
 
 
 REPOID = 'dnf-extra-tests'
+
+
+@contextlib.contextmanager
+def _suppress_enoent():
+    """Create a context manager which blocks propagation of ENOENTs.
+
+    :returns: the context manager
+    :rtype: contextmanager
+
+    """
+    try:
+        yield
+    except OSError as err:
+        if err.errno != errno.ENOENT:
+            raise
 
 
 def _makedirs(name, exist_ok=False):
@@ -57,6 +73,39 @@ def _makedirs(name, exist_ok=False):
                 not exist_ok or \
                 err.errno != errno.EEXIST or not os.path.isdir(name):
             raise
+
+
+def _run_dnf(args, root=None, releasever=None, quiet=False, assumeyes=False):
+    """Run DNF from command line.
+
+    The "dnf" executable must be available.
+
+    :param args: additional command line arguments
+    :type args: list[unicode]
+    :param assumeyes: set the --assumeyes option
+    :type assumeyes: bool
+    :param root: a value of the --installroot option
+    :type root: unicode | None
+    :param releasever: a value of the --releasever option
+    :type releasever: unicode | None
+    :param quiet: set the --queit option
+    :type quiet: bool
+    :returns: the output of the command
+    :rtype: str
+    :raises exceptions.OSError: if the executable cannot be executed
+    :raises subprocess.CalledProcessError: if executable fails
+
+    """
+    cmdline = ['dnf'] + args
+    if releasever:
+        cmdline.insert(1, '--releasever={}'.format(releasever))
+    if quiet:
+        cmdline.insert(1, '--quiet')
+    if root:
+        cmdline.insert(1, '--installroot={}'.format(root))
+    if assumeyes:
+        cmdline.insert(1, '--assumeyes')
+    return subprocess.check_output(cmdline)
 
 
 def _run_repoquery(repo=None, root=None, releasever=None, quiet=False):
@@ -79,17 +128,11 @@ def _run_repoquery(repo=None, root=None, releasever=None, quiet=False):
        fails
 
     """
-    cmdline = ['dnf', 'repoquery']
+    args = ['repoquery']
     if repo:
-        cmdline.insert(2, repo)
-        cmdline.insert(2, '--repoid')
-    if releasever:
-        cmdline.insert(1, '--releasever={}'.format(releasever))
-    if quiet:
-        cmdline.insert(1, '--quiet')
-    if root:
-        cmdline.insert(1, '--installroot={}'.format(root))
-    return subprocess.check_output(cmdline)
+        args.insert(1, repo)
+        args.insert(1, '--repoid')
+    return _run_dnf(args, root, releasever, quiet)
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
@@ -129,6 +172,51 @@ def _configure_dnf_customs(context):  # pylint: disable=unused-argument
             context.installroot_option = value
         else:
             raise NotImplementedError('configuration not supported')
+
+
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
+@behave.then(  # pylint: disable=no-member
+    'I should have the tracking information stored in the guest')
+def _test_tracking(context):
+    """Test whether tracking information is stored in the guest.
+
+    The "dnf" executable must be available.
+
+    :param context: the context in which the function is called
+    :type context: behave.runner.Context
+    :raises exceptions.OSError: if DNF cannot be configured
+    :raises shutil.Error: if DNF cannot be configured
+    :raises subprocess.CalledProcessError: if the executable fails
+    :raises exceptions.AssertionError: if the test fails
+
+    """
+    if not context.installroot_option:
+        raise ValueError('guest path not set')
+    with dnf.Base() as base:
+        releasever = context.releasever_option or dnf.rpm.detect_releasever(
+            base.conf.installroot)
+        persistdn = base.conf.persistdir
+    backupdn = tempfile.mkdtemp()
+    backuppersistdn = os.path.join(backupdn, 'persist')
+    try:
+        with _suppress_enoent():
+            shutil.copytree(persistdn, backuppersistdn)
+        _run_dnf(
+            ['group', 'install', 'Books and Guides'],
+            context.installroot_option, releasever, quiet=True, assumeyes=True)
+        content = []
+        with _suppress_enoent():
+            content = os.listdir(persistdn)
+        assert not content, 'something stored in the host'
+    finally:
+        with _suppress_enoent():
+            shutil.rmtree(persistdn)
+        with _suppress_enoent():
+            shutil.copytree(backuppersistdn, persistdn)
+        shutil.rmtree(backupdn)
+    chrooteddn = os.path.join(
+        context.installroot_option, persistdn.lstrip(os.path.sep))
+    assert os.listdir(chrooteddn), 'nothing stored in the guest'
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
