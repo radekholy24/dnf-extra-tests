@@ -35,6 +35,7 @@ Refer to the test suite for the complete list of all the features. I
 have, nevertheless, mentioned one of them below in hope of gaining your
 attention:
 
+- test managing different install roots
 - test tracking of previous runs
 - test release version substitution
 

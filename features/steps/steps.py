@@ -14,6 +14,8 @@
 
 """This module implements the feature steps.
 
+:var REPODN: name of a testing repository directory
+:type REPODN: str
 :var REPOID: name of testing repositories
 :type REPOID: unicode
 
@@ -37,6 +39,9 @@ import behave
 import createrepo_c
 import dnf.rpm
 
+
+REPODN = os.path.join(
+    os.path.dirname(__file__), os.path.pardir, b'resources', b'repository')
 
 REPOID = 'dnf-extra-tests'
 
@@ -175,6 +180,39 @@ def _configure_dnf_customs(context):  # pylint: disable=unused-argument
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
+@behave.then('I should manage the system root')  # pylint: disable=no-member
+def _test_management(context):
+    """Test whether the system root is managed.
+
+    The "dnf" executable must be available.
+
+    :param context: the context in which the function is called
+    :type context: behave.runner.Context
+    :raises exceptions.AssertionError: if the test fails
+    :raises exceptions.OSError: if the executable cannot be executed
+    :raises subprocess.CalledProcessError: if the executable fails
+
+    """
+    pkgfn = os.path.join(REPODN.decode(), 'foo-1-1.noarch.rpm')
+    _run_dnf(
+        ['install', pkgfn], context.installroot_option,
+        context.releasever_option, quiet=True, assumeyes=True)
+    try:
+        with dnf.Base() as base:
+            base.fill_sack(load_available_repos=False)
+            package = base.add_remote_rpm(pkgfn)
+            installed = base.sack.query().installed().filter(
+                name=package.name, epoch=int(package.epoch),
+                version=package.version, release=package.release,
+                arch=package.arch)
+            assert installed, 'system root not managed'
+    finally:
+        _run_dnf(
+            ['remove', 'foo'], context.installroot_option,
+            context.releasever_option, quiet=True, assumeyes=True)
+
+
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
 @behave.then(  # pylint: disable=no-member
     'I should have the tracking information stored {destination}')
 def _test_tracking(context, destination):
@@ -272,8 +310,6 @@ def _test_releasever(context, expected):
             base.do_transaction()
     # Create a repository with a $RELEASEVER in the URL.
     _makedirs(reposdn, exist_ok=True)
-    reposrcdn = os.path.join(
-        os.path.dirname(__file__), os.path.pardir, b'resources', b'repository')
     repodn = os.path.join(tempfile.mkdtemp(), releasever)
     # We need a slash at the end so that the urljoin below appends to the URL.
     repoparurl = urllib.pathname2url(
@@ -282,7 +318,7 @@ def _test_releasever(context, expected):
     repourl = urlparse.urljoin(
         urlparse.urlunsplit((b'file', b'', repoparurl, b'', b'')),
         b'$RELEASEVER')
-    shutil.copytree(reposrcdn, repodn)
+    shutil.copytree(REPODN, repodn)
     try:
         metadata = createrepo_c.Metadata()
         metadata.locate_and_load_xml(repodn)
