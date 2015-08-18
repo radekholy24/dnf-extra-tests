@@ -176,26 +176,29 @@ def _configure_dnf_customs(context):  # pylint: disable=unused-argument
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
 @behave.then(  # pylint: disable=no-member
-    'I should have the tracking information stored in the guest')
-def _test_tracking(context):
-    """Test whether tracking information is stored in the guest.
+    'I should have the tracking information stored {destination}')
+def _test_tracking(context, destination):
+    """Test whether tracking information is stored in the destination.
 
     The "dnf" executable must be available.
 
     :param context: the context in which the function is called
     :type context: behave.runner.Context
+    :param destination: the expected destination
+    :type destination: unicode
     :raises exceptions.OSError: if DNF cannot be configured
     :raises shutil.Error: if DNF cannot be configured
     :raises subprocess.CalledProcessError: if the executable fails
     :raises exceptions.AssertionError: if the test fails
 
     """
-    if not context.installroot_option:
-        raise ValueError('guest path not set')
     with dnf.Base() as base:
         releasever = context.releasever_option or dnf.rpm.detect_releasever(
             base.conf.installroot)
         persistdn = base.conf.persistdir
+    guest_destination = 'in the guest'
+    if destination not in {'locally', guest_destination}:
+        raise NotImplementedError('destination not supported')
     backupdn = tempfile.mkdtemp()
     backuppersistdn = os.path.join(backupdn, 'persist')
     try:
@@ -207,16 +210,22 @@ def _test_tracking(context):
         content = []
         with _suppress_enoent():
             content = os.listdir(persistdn)
-        assert not content, 'something stored in the host'
+        if destination == guest_destination:
+            assert not content, 'something stored in the host'
+        else:
+            assert content, 'nothing stored in the host'
     finally:
         with _suppress_enoent():
             shutil.rmtree(persistdn)
         with _suppress_enoent():
             shutil.copytree(backuppersistdn, persistdn)
         shutil.rmtree(backupdn)
-    chrooteddn = os.path.join(
-        context.installroot_option, persistdn.lstrip(os.path.sep))
-    assert os.listdir(chrooteddn), 'nothing stored in the guest'
+    if destination == guest_destination:
+        if not context.installroot_option:
+            raise ValueError('guest path not set')
+        chrooteddn = os.path.join(
+            context.installroot_option, persistdn.lstrip(os.path.sep))
+        assert os.listdir(chrooteddn), 'nothing stored in the guest'
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535

@@ -16,6 +16,10 @@ Feature: Keep track of previous runs
   In order support some future DNF's decisions, I want it to store the
   necessary information about the previous runs.
 
+  Scenario: Store the information
+     When I execute DNF with the default configuration
+     Then I should have the tracking information stored locally
+
   Scenario: Store the information in the guest if the root is different
      When I execute DNF with the following configuration:
        | Option        | Value                |
