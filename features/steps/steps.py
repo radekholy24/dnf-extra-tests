@@ -391,6 +391,8 @@ def _test_tracking(context, destination):
     try:
         with _suppress_enoent():
             shutil.copytree(persistdn, backuppersistdn)
+        with _suppress_enoent():
+            shutil.rmtree(persistdn)
         _run_dnf(
             ['group', 'install', 'Books and Guides'],
             context.installroot_option, releasever, quiet=True, assumeyes=True)
