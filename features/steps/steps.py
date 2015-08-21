@@ -251,6 +251,27 @@ def _run_repoquery(repo=None, root=None, releasever=None, quiet=False):
     return _run_dnf(args, root, releasever, quiet)
 
 
+def _prepare_installroot(name, releasever='19'):
+    """Prepare an install root.
+
+    :param name: a name of the root directory
+    :type name: unicode
+    :param releasever: the release version of the guest system
+    :type releasever: unicode
+    :raises dnf.exceptions.DownloadError: if the root cannot be prepared
+
+    """
+    with dnf.Base() as base:
+        base.conf.installroot = name
+        base.conf.substitutions['releasever'] = releasever
+        base.read_all_repos()
+        base.fill_sack(load_system_repo=False)
+        base.install('system-release')
+        base.resolve()
+        base.download_packages(base.transaction.install_set)
+        base.do_transaction()
+
+
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
 @behave.when(  # pylint: disable=no-member
     'I execute DNF with the default configuration')
@@ -340,25 +361,50 @@ def _test_verification(context, packages, keys):
     :param keys: a description of the root of the system with the tested
        keys
     :type keys: unicode
+    :raises dnf.exceptions.DownloadError: if a testing root cannot be
+       configured
+    :raises exceptions.ValueError: if a guest is manipulated but its
+       path is not specified
     :raises exceptions.OSError: if DNF cannot be configured or if the
        executable cannot be executed
     :raises subprocess.CalledProcessError: if executable fails
     :raises exceptions.IOError: if DNF cannot be configured
 
     """
-    if keys != 'host':
-        raise NotImplementedError('keys root not supported')
-    _run_rpm(['--import', GPGKEYFN.decode()], quiet=True)
-    if packages != 'host':
-        raise NotImplementedError('packages root not supported')
+    def translate_root(description):
+        """Convert from a root description to a root path.
+
+        :param description: the root description
+        :type description: unicode
+        :returns: the root path
+        :rtype: unicode
+        :raises exceptions.ValueError: if a guest is described but its
+           path is not specified
+
+        """
+        if description == 'host':
+            return
+        elif description == 'guest':
+            if not context.installroot_option:
+                raise ValueError('guest path not set')
+            return context.installroot_option
+        else:
+            raise NotImplementedError('root description not supported')
+    if context.installroot_option:
+        # Prepare the install root.
+        _prepare_installroot(context.installroot_option)
+    _run_rpm(
+        ['--import', GPGKEYFN.decode()], root=translate_root(keys), quiet=True)
     try:
         with _temp_repo_config(_path2url(REPODN), gpgcheck=True):
             _run_dnf_install(
-                ['signed-foo'], releasever=context.releasever_option,
-                quiet=True, assumeyes=True)
+                ['signed-foo'], root=translate_root(packages),
+                releasever=context.releasever_option, quiet=True,
+                assumeyes=True)
     finally:
         _run_rpm(
-            ['--erase', 'gpg-pubkey-{}'.format(GPGKEYID.lower())], quiet=True)
+            ['--erase', 'gpg-pubkey-{}'.format(GPGKEYID.lower())],
+            root=translate_root(keys), quiet=True)
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
@@ -448,16 +494,6 @@ def _test_releasever(context, expected):
             releasever = guest_releasever
         else:
             raise NotImplementedError('expectation not supported')
-        if context.installroot_option:
-            # Prepare an the install root.
-            base.conf.installroot = context.installroot_option
-            base.conf.substitutions['releasever'] = guest_releasever
-            base.read_all_repos()
-            base.fill_sack(load_system_repo=False)
-            base.install('system-release')
-            base.resolve()
-            base.download_packages(base.transaction.install_set)
-            base.do_transaction()
     # Create a repository with a $RELEASEVER in the URL.
     repodn = os.path.join(tempfile.mkdtemp(), releasever)
     # We need a slash at the end so that the urljoin below appends to the URL.
@@ -466,6 +502,9 @@ def _test_releasever(context, expected):
     # We need urljoin to avoid a quotation of the variable.
     repourl = urlparse.urljoin(_path2url(repoparurl), b'$RELEASEVER')
     shutil.copytree(REPODN, repodn)
+    if context.installroot_option:
+        # Prepare an the install root.
+        _prepare_installroot(context.installroot_option, guest_releasever)
     try:
         metadata = createrepo_c.Metadata()
         metadata.locate_and_load_xml(repodn)
