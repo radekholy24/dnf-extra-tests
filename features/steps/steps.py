@@ -14,10 +14,15 @@
 
 """This module implements the feature steps.
 
+:var RESOURCESDN: a name of the directory containing testing resources
+:type RESOURCESDN: str
 :var REPODN: name of a testing repository directory
 :type REPODN: str
-:var REPOID: name of testing repositories
-:type REPOID: unicode
+:var GPGKEYFN: a name of an armored public GPG key which can be used to
+   verify the signed package in the testing repository
+:type GPGKEYFN: str
+:var GPGKEYID: the short ID of the GPG key
+:type GPGKEYID: unicode
 
 """
 
@@ -40,10 +45,14 @@ import createrepo_c
 import dnf.rpm
 
 
-REPODN = os.path.join(
-    os.path.dirname(__file__), os.path.pardir, b'resources', b'repository')
+RESOURCESDN = os.path.join(
+    os.path.dirname(__file__), os.path.pardir, b'resources')
 
-REPOID = 'dnf-extra-tests'
+REPODN = os.path.join(RESOURCESDN, b'repository')
+
+GPGKEYFN = os.path.join(RESOURCESDN, b'TEST-GPG-KEY')
+
+GPGKEYID = '867B843D'
 
 
 @contextlib.contextmanager
@@ -80,6 +89,83 @@ def _makedirs(name, exist_ok=False):
             raise
 
 
+def _path2url(path):
+    """Convert a file path to an URL.
+
+    :param path: the path
+    :type path: str
+    :returns: the URL
+    :rtype: str
+
+    """
+    return urlparse.urlunsplit(
+        (b'file', b'', urllib.pathname2url(path), b'', b''))
+
+
+@contextlib.contextmanager
+def _temp_repo_config(baseurl, gpgcheck=None):
+    """Temporarily configure a repository.
+
+    The "dnf" executable must be available.
+
+    :param baseurl: a base URL of the repository
+    :type baseurl: str
+    :param gpgcheck: a value of the gpgcheck option
+    :type gpgcheck: bool | None
+    :returns: a context manager yielding ID of the repository
+    :rtype: contextmanager[unicode]
+    :raises exceptions.OSError: if the repository cannot be configured
+       or if the executable cannot be executed
+    :raises exceptions.IOError: if the repository cannot be configured
+
+    """
+    repoid = 'dnf-extra-tests'
+    with dnf.Base() as base:
+        configdn = base.conf.reposdir[0]
+    _makedirs(configdn, exist_ok=True)
+    conffile = tempfile.NamedTemporaryFile('wt', suffix='.repo', dir=configdn)
+    with conffile:
+        conffile.write(
+            b'[{}]\n'
+            b'baseurl={}\n'
+            b'metadata_expire=never\n'
+            .format(repoid.encode('utf-8'), baseurl))
+        if gpgcheck is not None:
+            conffile.write(b'gpgcheck={}\n'.format(
+                gpgcheck and b'true' or b'false'))
+        conffile.flush()
+        try:
+            yield repoid
+        finally:
+            subprocess.call([
+                'dnf', '--quiet', '--disablerepo=*',
+                '--enablerepo={}'.format(repoid), 'clean', 'metadata'])
+
+
+def _run_rpm(args, root=None, quiet=False):
+    """Run RPM from command line.
+
+    The "rpm" executable must be available.
+
+    :param args: additional command line arguments
+    :type args: list[unicode]
+    :param root: a value of the --root option
+    :type root: unicode | None
+    :param quiet: set the --quiet option
+    :type quiet: bool
+    :raises exceptions.OSError: if the executable cannot be executed
+    :raises subprocess.CalledProcessError: if executable fails
+
+    """
+    cmdline = ['rpm'] + args
+    if root:
+        cmdline.insert(1, root)
+        cmdline.insert(1, '--root')
+    if quiet:
+        cmdline.insert(1, '--quiet')
+    subprocess.check_call(cmdline)
+
+
 def _run_dnf(args, root=None, releasever=None, quiet=False, assumeyes=False):
     """Run DNF from command line.
 
@@ -111,6 +197,31 @@ def _run_dnf(args, root=None, releasever=None, quiet=False, assumeyes=False):
     if assumeyes:
         cmdline.insert(1, '--assumeyes')
     return subprocess.check_output(cmdline)
+
+
+def _run_dnf_install(
+        specs, root=None, releasever=None, quiet=False, assumeyes=False):
+    """Run DNF's install command from command line.
+
+    The "dnf" executable must be available.
+
+    :param specs: specifications of the packages to be installed
+    :type specs: list[unicode]
+    :param root: a value of the --installroot option
+    :type root: unicode | None
+    :param releasever: a value of the --releasever option
+    :type releasever: unicode | None
+    :param quiet: set the --queit option
+    :type quiet: bool
+    :param assumeyes: set the --assumeyes option
+    :type assumeyes: bool
+    :returns: the output of the command
+    :rtype: str
+    :raises exceptions.OSError: if the executable cannot be executed
+    :raises subprocess.CalledProcessError: if executable fails
+
+    """
+    return _run_dnf(['install'] + specs, root, releasever, quiet, assumeyes)
 
 
 def _run_repoquery(repo=None, root=None, releasever=None, quiet=False):
@@ -194,9 +305,9 @@ def _test_management(context):
 
     """
     pkgfn = os.path.join(REPODN.decode(), 'foo-1-1.noarch.rpm')
-    _run_dnf(
-        ['install', pkgfn], context.installroot_option,
-        context.releasever_option, quiet=True, assumeyes=True)
+    _run_dnf_install(
+        [pkgfn], context.installroot_option, context.releasever_option,
+        quiet=True, assumeyes=True)
     try:
         with dnf.Base() as base:
             base.fill_sack(load_available_repos=False)
@@ -210,6 +321,44 @@ def _test_management(context):
         _run_dnf(
             ['remove', 'foo'], context.installroot_option,
             context.releasever_option, quiet=True, assumeyes=True)
+
+
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
+@behave.then(  # pylint: disable=no-member
+    'I should have the {packages} packages being verified using the {keys} '
+    'keys')
+def _test_verification(context, packages, keys):
+    """Test whether packages are verified using correct keys.
+
+    The "dnf" and "rpm" executables must be available.
+
+    :param context: the context in which the function is called
+    :type context: behave.runner.Context
+    :param packages: a description of the root of the system with the
+       tested packages
+    :type packages: unicode
+    :param keys: a description of the root of the system with the tested
+       keys
+    :type keys: unicode
+    :raises exceptions.OSError: if DNF cannot be configured or if the
+       executable cannot be executed
+    :raises subprocess.CalledProcessError: if executable fails
+    :raises exceptions.IOError: if DNF cannot be configured
+
+    """
+    if keys != 'host':
+        raise NotImplementedError('keys root not supported')
+    _run_rpm(['--import', GPGKEYFN.decode()], quiet=True)
+    if packages != 'host':
+        raise NotImplementedError('packages root not supported')
+    try:
+        with _temp_repo_config(_path2url(REPODN), gpgcheck=True):
+            _run_dnf_install(
+                ['signed-foo'], releasever=context.releasever_option,
+                quiet=True, assumeyes=True)
+    finally:
+        _run_rpm(
+            ['--erase', 'gpg-pubkey-{}'.format(GPGKEYID.lower())], quiet=True)
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
@@ -289,7 +438,6 @@ def _test_releasever(context, expected):
     """
     guest_releasever = '19'
     with dnf.Base() as base:
-        reposdn = base.conf.reposdir[0]
         if expected == "the host's release version":
             releasever = dnf.rpm.detect_releasever(base.conf.installroot)
         elif re.match('^“.+?”$', expected):
@@ -309,37 +457,21 @@ def _test_releasever(context, expected):
             base.download_packages(base.transaction.install_set)
             base.do_transaction()
     # Create a repository with a $RELEASEVER in the URL.
-    _makedirs(reposdn, exist_ok=True)
     repodn = os.path.join(tempfile.mkdtemp(), releasever)
     # We need a slash at the end so that the urljoin below appends to the URL.
     repoparurl = urllib.pathname2url(
         os.path.join(os.path.dirname(repodn), b''))
     # We need urljoin to avoid a quotation of the variable.
-    repourl = urlparse.urljoin(
-        urlparse.urlunsplit((b'file', b'', repoparurl, b'', b'')),
-        b'$RELEASEVER')
+    repourl = urlparse.urljoin(_path2url(repoparurl), b'$RELEASEVER')
     shutil.copytree(REPODN, repodn)
     try:
         metadata = createrepo_c.Metadata()
         metadata.locate_and_load_xml(repodn)
         nevras = [metadata.get(key).nevra() for key in metadata.keys()]
-        repofile = tempfile.NamedTemporaryFile(
-            'wt', suffix='.repo', dir=reposdn)
-        with repofile:
-            repofile.write(
-                b'[{}]\n'
-                b'baseurl={}\n'
-                b'metadata_expire=never\n'
-                .format(REPOID.encode('utf-8'), repourl))
-            repofile.flush()
-            try:
-                output = _run_repoquery(
-                    REPOID, context.installroot_option,
-                    context.releasever_option, quiet=True)
-                assert output.splitlines() == nevras, '$RELEASEVER not correct'
-            finally:
-                subprocess.call([
-                    'dnf', '--quiet', '--disablerepo=*',
-                    '--enablerepo={}'.format(REPOID), 'clean', 'metadata'])
+        with _temp_repo_config(repourl) as repoid:
+            output = _run_repoquery(
+                repoid, context.installroot_option, context.releasever_option,
+                quiet=True)
+            assert output.splitlines() == nevras, '$RELEASEVER not correct'
     finally:
         shutil.rmtree(os.path.dirname(repodn))
