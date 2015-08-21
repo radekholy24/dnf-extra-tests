@@ -36,6 +36,7 @@ have, nevertheless, mentioned one of them below in hope of gaining your
 attention:
 
 - test managing different install roots
+- test verification of signed packages
 - test tracking of previous runs
 - test release version substitution
 
@@ -63,6 +64,7 @@ Following executables and Python modules are required to run
 dnf-extra-tests:
 
 - `dnf executable <https://github.com/rpm-software-management/dnf/>`_
+- `rpm executable <http://www.rpm.org/>`_
 - `repoquery plugin
   <https://github.com/rpm-software-management/dnf-plugins-core/>`_
 - `behave Python module <http://github.com/behave/behave/>`_
