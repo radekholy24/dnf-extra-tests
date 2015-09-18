@@ -312,32 +312,45 @@ def _configure_dnf_customs(context):  # pylint: disable=unused-argument
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
-@behave.then('I should manage the system root')  # pylint: disable=no-member
-def _test_management(context):
-    """Test whether the system root is managed.
+@behave.then('I should manage the {root} root')  # pylint: disable=no-member
+def _test_management(context, root):
+    """Test whether the particular root is managed.
 
     The "dnf" executable must be available.
 
     :param context: the context in which the function is called
     :type context: behave.runner.Context
+    :param root: a description of the tested root
+    :type root: unicode
+    :raises dnf.exceptions.DownloadError: if a testing root cannot be
+       configured
     :raises exceptions.AssertionError: if the test fails
     :raises exceptions.OSError: if the executable cannot be executed
     :raises subprocess.CalledProcessError: if the executable fails
 
     """
     pkgfn = os.path.join(REPODN.decode(), 'foo-1-1.noarch.rpm')
+    if context.installroot_option:
+        _prepare_installroot(
+            context.installroot_option, context.releasever_option or '19')
     _run_dnf_install(
         [pkgfn], context.installroot_option, context.releasever_option,
         quiet=True, assumeyes=True)
     try:
         with dnf.Base() as base:
+            if root == 'custom install':
+                if not context.installroot_option:
+                    raise ValueError('root path not set')
+                base.conf.installroot = context.installroot_option
+            elif root != 'system':
+                raise NotImplementedError('root description not supported')
             base.fill_sack(load_available_repos=False)
             package = base.add_remote_rpm(pkgfn)
             installed = base.sack.query().installed().filter(
                 name=package.name, epoch=int(package.epoch),
                 version=package.version, release=package.release,
                 arch=package.arch)
-            assert installed, 'system root not managed'
+            assert installed, '{} root not managed'.format(root)
     finally:
         _run_dnf(
             ['remove', 'foo'], context.installroot_option,
