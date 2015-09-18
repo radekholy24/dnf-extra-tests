@@ -421,29 +421,46 @@ def _test_verification(context, packages, keys):
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
-@behave.then('I should have the metadata cached')  # pylint: disable=no-member
-def _test_caching(context):
-    """Test whether metadata is cached.
+@behave.then(  # pylint: disable=no-member
+    'I should have the metadata cached {destination}')
+def _test_caching(context, destination):
+    """Test whether metadata is cached in the destination.
 
     The "dnf" executable must be available.
 
     :param context: the context in which the function is called
     :type context: behave.runner.Context
+    :param destination: a description of the expected destination
+    :type destination: unicode
     :raises exceptions.OSError: if DNF cannot be configured
     :raises subprocess.CalledProcessError: if the executable fails
     :raises exceptions.AssertionError: if the test fails
 
     """
-    if context.installroot_option:
-        raise NotImplementedError('different root not supported')
     with dnf.Base() as base:
-        cachedir = base.conf.cachedir
+        cachedir = chrooteddn = base.conf.cachedir
+    if context.installroot_option:
+        chrooteddn = os.path.join(
+            context.installroot_option, cachedir.lstrip(os.path.sep))
+        _prepare_installroot(
+            context.installroot_option, context.releasever_option or '19')
     with _suppress_enoent():
         shutil.rmtree(cachedir)
+    with _suppress_enoent():
+        shutil.rmtree(chrooteddn)
     _run_dnf(
-        ['makecache'], releasever=context.releasever_option, quiet=True,
-        assumeyes=True)
-    assert os.listdir(cachedir), 'nothing cached'
+        ['makecache'], context.installroot_option, context.releasever_option,
+        quiet=True, assumeyes=True)
+    content = []
+    with _suppress_enoent():
+        content = os.listdir(cachedir)
+    if destination == 'locally':
+        assert content, 'nothing cached in the host'
+    elif destination == 'in the guest':
+        assert os.listdir(chrooteddn), 'nothing cached in the guest'
+        assert not content, 'something cached in the host'
+    else:
+        raise NotImplementedError('destination not supported')
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
