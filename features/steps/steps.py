@@ -421,6 +421,32 @@ def _test_verification(context, packages, keys):
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
+@behave.then('I should have the metadata cached')  # pylint: disable=no-member
+def _test_caching(context):
+    """Test whether metadata is cached.
+
+    The "dnf" executable must be available.
+
+    :param context: the context in which the function is called
+    :type context: behave.runner.Context
+    :raises exceptions.OSError: if DNF cannot be configured
+    :raises subprocess.CalledProcessError: if the executable fails
+    :raises exceptions.AssertionError: if the test fails
+
+    """
+    if context.installroot_option:
+        raise NotImplementedError('different root not supported')
+    with dnf.Base() as base:
+        cachedir = base.conf.cachedir
+    with _suppress_enoent():
+        shutil.rmtree(cachedir)
+    _run_dnf(
+        ['makecache'], releasever=context.releasever_option, quiet=True,
+        assumeyes=True)
+    assert os.listdir(cachedir), 'nothing cached'
+
+
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
 @behave.then(  # pylint: disable=no-member
     'I should have the tracking information stored {destination}')
 def _test_tracking(context, destination):
