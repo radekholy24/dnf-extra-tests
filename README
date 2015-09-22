@@ -37,6 +37,7 @@ attention:
 
 - test managing different install roots
 - test verification of signed packages
+- test loading of configurations
 - test caching of metadata
 - test tracking of previous runs
 - test release version substitution
