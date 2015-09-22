@@ -180,13 +180,17 @@ def _run_rpm(args, root=None, quiet=False):
     subprocess.check_call(cmdline)
 
 
-def _run_dnf(args, root=None, releasever=None, quiet=False, assumeyes=False):
+def _run_dnf(
+        args, configfn=None, root=None, releasever=None, quiet=False,
+        assumeyes=False):
     """Run DNF from command line.
 
     The "dnf" executable must be available.
 
     :param args: additional command line arguments
     :type args: list[unicode]
+    :param configfn: a name of a configuration file
+    :type configfn: unicode | None
     :param assumeyes: set the --assumeyes option
     :type assumeyes: bool
     :param root: a value of the --installroot option
@@ -208,19 +212,24 @@ def _run_dnf(args, root=None, releasever=None, quiet=False, assumeyes=False):
         cmdline.insert(1, '--quiet')
     if root:
         cmdline.insert(1, '--installroot={}'.format(root))
+    if configfn:
+        cmdline.insert(1, '--config={}'.format(configfn))
     if assumeyes:
         cmdline.insert(1, '--assumeyes')
     return subprocess.check_output(cmdline)
 
 
 def _run_dnf_install(
-        specs, root=None, releasever=None, quiet=False, assumeyes=False):
+        specs, configfn=None, root=None, releasever=None, quiet=False,
+        assumeyes=False):
     """Run DNF's install command from command line.
 
     The "dnf" executable must be available.
 
     :param specs: specifications of the packages to be installed
     :type specs: list[unicode]
+    :param configfn: a name of a configuration file
+    :type configfn: unicode | None
     :param root: a value of the --installroot option
     :type root: unicode | None
     :param releasever: a value of the --releasever option
@@ -235,14 +244,18 @@ def _run_dnf_install(
     :raises subprocess.CalledProcessError: if executable fails
 
     """
-    return _run_dnf(['install'] + specs, root, releasever, quiet, assumeyes)
+    return _run_dnf(
+        ['install'] + specs, configfn, root, releasever, quiet, assumeyes)
 
 
-def _run_repoquery(repo=None, root=None, releasever=None, quiet=False):
+def _run_repoquery(
+        configfn=None, repo=None, root=None, releasever=None, quiet=False):
     """Run the DNF's repoquery plugin from command line.
 
     The "dnf" executable and its "repoquery" plugin must be available.
 
+    :param configfn: a name of a configuration file
+    :type configfn: unicode | None
     :param repo: a value of the --repo option
     :type repo: unicode | None
     :param root: a value of the --installroot option
@@ -262,7 +275,7 @@ def _run_repoquery(repo=None, root=None, releasever=None, quiet=False):
     if repo:
         args.insert(1, repo)
         args.insert(1, '--repoid')
-    return _run_dnf(args, root, releasever, quiet)
+    return _run_dnf(args, configfn, root, releasever, quiet)
 
 
 def _prepare_installroot(name, releasever='19'):
@@ -286,7 +299,8 @@ def _prepare_installroot(name, releasever='19'):
         base.do_transaction()
 
 
-def _test_repo_equals_dir(repoid, reporoot, reporelease, dirname, message):
+def _test_repo_equals_dir(
+        repoid, reporoot, reporelease, dirname, message, dnfconfig=None):
     """Test whether a repository is equal to a directory.
 
     The "dnf" executable and its "repoquery" plugin must be available.
@@ -301,6 +315,8 @@ def _test_repo_equals_dir(repoid, reporoot, reporelease, dirname, message):
     :type dirname: str
     :param message: an argument passed to the assertion error
     :type message: unicode
+    :param dnfconfig: a name of a configuration file
+    :type dnfconfig: unicode | None
     :raises exceptions.OSError: if the executable cannot be executed
     :raises exceptions.ValueError: if the repository or the directory
        cannot be queried
@@ -308,8 +324,9 @@ def _test_repo_equals_dir(repoid, reporoot, reporelease, dirname, message):
 
     """
     try:
-        output = _run_repoquery(repoid, reporoot, reporelease, quiet=True)
-    except subprocess.CalledProcessError:
+        output = _run_repoquery(
+            dnfconfig, repoid, reporoot, reporelease, quiet=True)
+    except subprocess.CalledProcessError as err:
         raise ValueError('repo query failed')
     metadata = createrepo_c.Metadata()
     # FIXME: https://github.com/rpm-software-management/createrepo_c/issues/29
@@ -352,7 +369,9 @@ def _configure_dnf_customs(context):  # pylint: disable=unused-argument
     if context.table.headings != ['Option', 'Value']:
         raise NotImplementedError('configuration format not supported')
     for option, value in context.table:
-        if option == '--releasever':
+        if option == '--config':
+            context.config_option = value
+        elif option == '--releasever':
             context.releasever_option = value
         elif option == '--installroot':
             context.installroot_option = value
@@ -383,8 +402,8 @@ def _test_management(context, root):
         _prepare_installroot(
             context.installroot_option, context.releasever_option or '19')
     _run_dnf_install(
-        [pkgfn], context.installroot_option, context.releasever_option,
-        quiet=True, assumeyes=True)
+        [pkgfn], context.config_option, context.installroot_option,
+        context.releasever_option, quiet=True, assumeyes=True)
     try:
         with dnf.Base() as base:
             if root == 'custom install':
@@ -402,8 +421,8 @@ def _test_management(context, root):
             assert installed, '{} root not managed'.format(root)
     finally:
         _run_dnf(
-            ['remove', 'foo'], context.installroot_option,
-            context.releasever_option, quiet=True, assumeyes=True)
+            ['remove', 'foo'], root=context.installroot_option,
+            releasever=context.releasever_option, quiet=True, assumeyes=True)
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
@@ -460,9 +479,9 @@ def _test_verification(context, packages, keys):
     try:
         with _temp_repo_config(_path2url(REPODN), gpgcheck=True):
             _run_dnf_install(
-                ['signed-foo'], root=translate_root(packages),
-                releasever=context.releasever_option, quiet=True,
-                assumeyes=True)
+                ['signed-foo'], context.config_option,
+                translate_root(packages), context.releasever_option,
+                quiet=True, assumeyes=True)
     finally:
         _run_rpm(
             ['--erase', 'gpg-pubkey-{}'.format(GPGKEYID.lower())],
@@ -497,14 +516,16 @@ def _test_config(context, expected):
             context.installroot_option, context.configfn.lstrip(os.path.sep))
         _prepare_installroot(
             context.installroot_option, context.releasever_option or '19')
-        _makedirs(os.path.dirname(configfn), exist_ok=True)
     else:
-        raise NotImplementedError('configuration not supported')
+        if context.installroot_option:
+            raise NotImplementedError('installroot not supported')
+        configfn = expected
+    _makedirs(os.path.dirname(configfn), exist_ok=True)
     with open(configfn, 'at') as configfile:
         configfile.write(_repo_config(_path2url(REPODN)))
     _test_repo_equals_dir(
         'dnf-extra-tests', context.installroot_option,
-        context.releasever_option, REPODN, 'config not loaded')
+        context.releasever_option, REPODN, 'config not loaded', configfn)
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
@@ -536,8 +557,8 @@ def _test_caching(context, destination):
     with _suppress_enoent():
         shutil.rmtree(chrooteddn)
     _run_dnf(
-        ['makecache'], context.installroot_option, context.releasever_option,
-        quiet=True, assumeyes=True)
+        ['makecache'], context.config_option, context.installroot_option,
+        context.releasever_option, quiet=True, assumeyes=True)
     content = []
     with _suppress_enoent():
         content = os.listdir(cachedir)
@@ -583,7 +604,7 @@ def _test_tracking(context, destination):
         with _suppress_enoent():
             shutil.rmtree(persistdn)
         _run_dnf(
-            ['group', 'install', 'Books and Guides'],
+            ['group', 'install', 'Books and Guides'], context.config_option,
             context.installroot_option, releasever, quiet=True, assumeyes=True)
         content = []
         with _suppress_enoent():
@@ -652,6 +673,6 @@ def _test_releasever(context, expected):
         with _temp_repo_config(repourl) as repoid:
             _test_repo_equals_dir(
                 repoid, context.installroot_option, context.releasever_option,
-                repodn, '$RELEASEVER not correct')
+                repodn, '$RELEASEVER not correct', context.config_option)
     finally:
         shutil.rmtree(os.path.dirname(repodn))
