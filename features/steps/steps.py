@@ -527,6 +527,41 @@ def _test_config(context, expected):
         context.releasever_option, REPODN, 'config not loaded', configfn)
 
 
+@behave.then(  # pylint: disable=no-member
+    'I should have the events logged locally')
+def _test_logging(context):
+    """Test whether events are logged locally.
+
+    The "dnf" executable must be available.
+
+    :param context: the context in which the function is called
+    :type context: behave.runner.Context
+    :raises exceptions.OSError: if DNF cannot be configured or if the
+       executable cannot be executed
+    :raises subprocess.CalledProcessError: if executable fails
+    :raises exceptions.AssertionError: if the test fails
+
+    """
+    with dnf.Base() as base:
+        logdn = base.conf.logdir
+    basenames = []
+    with _suppress_enoent():
+        basenames = os.listdir(logdn)
+    for basename in basenames:
+        filename = os.path.join(logdn, basename)
+        if basename.startswith('dnf') and os.path.isfile(filename):
+            os.remove(filename)
+    if context.installroot_option:
+        raise NotImplementedError('installroot not supported')
+    _run_dnf(
+        ['makecache'], context.config_option, context.installroot_option,
+        context.releasever_option, quiet=True, assumeyes=True)
+    basenames = []
+    with _suppress_enoent():
+        basenames = os.listdir(logdn)
+    assert any(name.startswith('dnf') for name in basenames), 'nothing logged'
+
+
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
 @behave.then(  # pylint: disable=no-member
     'I should have the metadata cached {destination}')
