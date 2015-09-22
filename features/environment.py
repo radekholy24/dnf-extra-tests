@@ -25,6 +25,8 @@ attributes:
     A name of the DNF configuration file.
 :attr:`!backupfn` : :class:`str` | :data:`None`
     A name of the DNF configuration backup file.
+:attr:`!config_option` : :data:`types.UnicodeType` | :data:`None`
+    A release version to be configured.
 :attr:`!releasever_option` : :data:`types.UnicodeType` | :data:`None`
     A release version to be configured.
 :attr:`!installroot_option` : :data:`types.UnicodeType` | :data:`None`
@@ -54,6 +56,7 @@ def before_scenario(context, scenario):  # pylint: disable=unused-argument
     :raises exceptions.IOError: if DNF cannot be configured
 
     """
+    context.config_option = None
     context.releasever_option = None
     context.installroot_option = None
     with dnf.Base() as base:

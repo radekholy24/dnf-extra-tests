@@ -20,6 +20,12 @@ Feature: Load configuration
      When I execute DNF with the default configuration
      Then I should have the default configuration file loaded
 
+  Scenario: Load custom file
+     When I execute DNF with the following configuration:
+       | Option   | Value                     |
+       | --config | /tmp/dnf-extra-tests.conf |
+     Then I should have the /tmp/dnf-extra-tests.conf configuration file loaded
+
   Scenario: Load guest's file if the root is different
      When I execute DNF with the following configuration:
        | Option        | Value                |
