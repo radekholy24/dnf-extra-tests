@@ -470,23 +470,37 @@ def _test_verification(context, packages, keys):
 
 
 @behave.then(  # pylint: disable=no-member
-    'I should have the default configuration file loaded')
-def _test_config(context):
+    'I should have the {expected} configuration file loaded')
+def _test_config(context, expected):
     """Test whether the default configuration file is loaded.
 
     The "dnf" executable and its "repoquery" plugin must be available.
 
     :param context: the context in which the function is called
     :type context: behave.runner.Context
+    :param expected: a description of the expected configuration
+    :type expected: unicode
+    :raises dnf.exceptions.DownloadError: if a testing root cannot be
+       configured
     :raises exceptions.IOError: if DNF cannot be configured
     :raises exceptions.OSError: if the executable cannot be executed
     :raises exceptions.ValueError: if the configuration cannot be tested
     :raises exceptions.AssertionError: if the test fails
 
     """
-    if context.installroot_option:
-        raise NotImplementedError('installroot not supported')
-    with open(context.configfn, 'at') as configfile:
+    if expected == 'default':
+        configfn = context.configfn
+    elif expected == "guest's default":
+        if not context.installroot_option:
+            raise ValueError('guest path not set')
+        configfn = os.path.join(
+            context.installroot_option, context.configfn.lstrip(os.path.sep))
+        _prepare_installroot(
+            context.installroot_option, context.releasever_option or '19')
+        _makedirs(os.path.dirname(configfn), exist_ok=True)
+    else:
+        raise NotImplementedError('configuration not supported')
+    with open(configfn, 'at') as configfile:
         configfile.write(_repo_config(_path2url(REPODN)))
     _test_repo_equals_dir(
         'dnf-extra-tests', context.installroot_option,
