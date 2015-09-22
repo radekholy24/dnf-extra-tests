@@ -180,7 +180,7 @@ def _run_rpm(args, root=None, quiet=False):
     subprocess.check_call(cmdline)
 
 
-def _run_dnf(
+def _run_dnf(  # pylint: disable=too-many-arguments
         args, configfn=None, root=None, releasever=None, quiet=False,
         assumeyes=False):
     """Run DNF from command line.
@@ -219,7 +219,7 @@ def _run_dnf(
     return subprocess.check_output(cmdline)
 
 
-def _run_dnf_install(
+def _run_dnf_install(  # pylint: disable=too-many-arguments
         specs, configfn=None, root=None, releasever=None, quiet=False,
         assumeyes=False):
     """Run DNF's install command from command line.
@@ -299,7 +299,7 @@ def _prepare_installroot(name, releasever='19'):
         base.do_transaction()
 
 
-def _test_repo_equals_dir(
+def _test_repo_equals_dir(  # pylint: disable=too-many-arguments
         repoid, reporoot, reporelease, dirname, message, dnfconfig=None):
     """Test whether a repository is equal to a directory.
 
@@ -326,7 +326,7 @@ def _test_repo_equals_dir(
     try:
         output = _run_repoquery(
             dnfconfig, repoid, reporoot, reporelease, quiet=True)
-    except subprocess.CalledProcessError as err:
+    except subprocess.CalledProcessError:
         raise ValueError('repo query failed')
     metadata = createrepo_c.Metadata()
     # FIXME: https://github.com/rpm-software-management/createrepo_c/issues/29
@@ -514,12 +514,11 @@ def _test_config(context, expected):
             raise ValueError('guest path not set')
         configfn = os.path.join(
             context.installroot_option, context.configfn.lstrip(os.path.sep))
+    else:
+        configfn = expected
+    if context.installroot_option:
         _prepare_installroot(
             context.installroot_option, context.releasever_option or '19')
-    else:
-        if context.installroot_option:
-            raise NotImplementedError('installroot not supported')
-        configfn = expected
     _makedirs(os.path.dirname(configfn), exist_ok=True)
     with open(configfn, 'at') as configfile:
         configfile.write(_repo_config(_path2url(REPODN)))
