@@ -519,7 +519,7 @@ def _test_config(context, expected):
     if context.installroot_option:
         _prepare_installroot(
             context.installroot_option, context.releasever_option or '19')
-    _makedirs(os.path.dirname(configfn), exist_ok=True)
+    _makedirs(os.path.dirname(os.path.abspath(configfn)), exist_ok=True)
     with open(configfn, 'at') as configfile:
         configfile.write(_repo_config(_path2url(REPODN)))
     _test_repo_equals_dir(

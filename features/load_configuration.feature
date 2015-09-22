@@ -26,6 +26,12 @@ Feature: Load configuration
        | --config | /tmp/dnf-extra-tests.conf |
      Then I should have the /tmp/dnf-extra-tests.conf configuration file loaded
 
+  Scenario: Load custom relative file
+     When I execute DNF with the following configuration:
+       | Option   | Value                |
+       | --config | dnf-extra-tests.conf |
+     Then I should have the dnf-extra-tests.conf configuration file loaded
+
   Scenario: Load guest's file if the root is different
      When I execute DNF with the following configuration:
        | Option        | Value                |
