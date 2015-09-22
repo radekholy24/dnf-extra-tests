@@ -102,6 +102,28 @@ def _path2url(path):
         (b'file', b'', urllib.pathname2url(path), b'', b''))
 
 
+def _repo_config(baseurl, gpgcheck=None):
+    """Compose a repository configuration.
+
+    The ID of the repository is "dnf-extra-tests".
+
+    :param baseurl: a base URL of the repository
+    :type baseurl: str
+    :param gpgcheck: a value of the gpgcheck option
+    :type gpgcheck: bool | None
+    :returns: the configuration as a string
+    :rtype: str
+
+    """
+    lines = [
+        b'[dnf-extra-tests]\n'
+        b'baseurl={}\n'
+        b'metadata_expire=0\n'.format(baseurl)]
+    if gpgcheck is not None:
+        lines.append(b'gpgcheck={}\n'.format(gpgcheck and b'true' or b'false'))
+    return b''.join(lines)
+
+
 @contextlib.contextmanager
 def _temp_repo_config(baseurl, gpgcheck=None):
     """Temporarily configure a repository.
@@ -119,27 +141,19 @@ def _temp_repo_config(baseurl, gpgcheck=None):
     :raises exceptions.IOError: if the repository cannot be configured
 
     """
-    repoid = 'dnf-extra-tests'
     with dnf.Base() as base:
         configdn = base.conf.reposdir[0]
     _makedirs(configdn, exist_ok=True)
     conffile = tempfile.NamedTemporaryFile('wt', suffix='.repo', dir=configdn)
     with conffile:
-        conffile.write(
-            b'[{}]\n'
-            b'baseurl={}\n'
-            b'metadata_expire=never\n'
-            .format(repoid.encode('utf-8'), baseurl))
-        if gpgcheck is not None:
-            conffile.write(b'gpgcheck={}\n'.format(
-                gpgcheck and b'true' or b'false'))
+        conffile.write(_repo_config(baseurl, gpgcheck))
         conffile.flush()
         try:
-            yield repoid
+            yield 'dnf-extra-tests'
         finally:
             subprocess.call([
                 'dnf', '--quiet', '--disablerepo=*',
-                '--enablerepo={}'.format(repoid), 'clean', 'metadata'])
+                '--enablerepo=dnf-extra-tests', 'clean', 'metadata'])
 
 
 def _run_rpm(args, root=None, quiet=False):
@@ -270,6 +284,41 @@ def _prepare_installroot(name, releasever='19'):
         base.resolve()
         base.download_packages(base.transaction.install_set)
         base.do_transaction()
+
+
+def _test_repo_equals_dir(repoid, reporoot, reporelease, dirname, message):
+    """Test whether a repository is equal to a directory.
+
+    The "dnf" executable and its "repoquery" plugin must be available.
+
+    :param repoid: the ID of the repository
+    :type repoid: unicode
+    :param reporoot: a name of the install root of the repository
+    :type reporoot: unicode | None
+    :param reporelease: a value of the $RELEASEVER
+    :type reporelease: unicode | None
+    :param dirname: a name of the directory
+    :type dirname: str
+    :param message: an argument passed to the assertion error
+    :type message: unicode
+    :raises exceptions.OSError: if the executable cannot be executed
+    :raises exceptions.ValueError: if the repository or the directory
+       cannot be queried
+    :raises exceptions.AssertionError: if the test fails
+
+    """
+    try:
+        output = _run_repoquery(repoid, reporoot, reporelease, quiet=True)
+    except subprocess.CalledProcessError:
+        raise ValueError('repo query failed')
+    metadata = createrepo_c.Metadata()
+    # FIXME: https://github.com/rpm-software-management/createrepo_c/issues/29
+    try:
+        metadata.locate_and_load_xml(dirname)
+    except Exception:
+        raise ValueError('directory query failed')
+    nevras = [metadata.get(key).nevra() for key in metadata.keys()]
+    assert output.splitlines() == nevras, message
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
@@ -420,6 +469,30 @@ def _test_verification(context, packages, keys):
             root=translate_root(keys), quiet=True)
 
 
+@behave.then(  # pylint: disable=no-member
+    'I should have the default configuration file loaded')
+def _test_config(context):
+    """Test whether the default configuration file is loaded.
+
+    The "dnf" executable and its "repoquery" plugin must be available.
+
+    :param context: the context in which the function is called
+    :type context: behave.runner.Context
+    :raises exceptions.IOError: if DNF cannot be configured
+    :raises exceptions.OSError: if the executable cannot be executed
+    :raises exceptions.ValueError: if the configuration cannot be tested
+    :raises exceptions.AssertionError: if the test fails
+
+    """
+    if context.installroot_option:
+        raise NotImplementedError('installroot not supported')
+    with open(context.configfn, 'at') as configfile:
+        configfile.write(_repo_config(_path2url(REPODN)))
+    _test_repo_equals_dir(
+        'dnf-extra-tests', context.installroot_option,
+        context.releasever_option, REPODN, 'config not loaded')
+
+
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
 @behave.then(  # pylint: disable=no-member
     'I should have the metadata cached {destination}')
@@ -536,8 +609,8 @@ def _test_releasever(context, expected):
     :raises exceptions.OSError: if DNF cannot be configured or if the
        executable cannot be executed
     :raises exceptions.IOError: if DNF cannot be configured
-    :raises subprocess.CalledProcessError: if executable or the plugin
-       fails
+    :raises exceptions.ValueError: if the $RELEASEVER cannot be tested
+    :raises exceptions.AssertionError: if the test fails
 
     """
     guest_releasever = '19'
@@ -562,13 +635,9 @@ def _test_releasever(context, expected):
         # Prepare an the install root.
         _prepare_installroot(context.installroot_option, guest_releasever)
     try:
-        metadata = createrepo_c.Metadata()
-        metadata.locate_and_load_xml(repodn)
-        nevras = [metadata.get(key).nevra() for key in metadata.keys()]
         with _temp_repo_config(repourl) as repoid:
-            output = _run_repoquery(
+            _test_repo_equals_dir(
                 repoid, context.installroot_option, context.releasever_option,
-                quiet=True)
-            assert output.splitlines() == nevras, '$RELEASEVER not correct'
+                repodn, '$RELEASEVER not correct')
     finally:
         shutil.rmtree(os.path.dirname(repodn))

@@ -43,14 +43,19 @@ import tempfile
 import dnf
 
 
-def before_all(context):
-    """Do the preparation that can be done at the very beginning.
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
+def before_scenario(context, scenario):  # pylint: disable=unused-argument
+    """Do the preparation that must be done before every scenario.
 
     :param context: the context as described in the environment file
     :type context: behave.runner.Context
+    :param scenario: the next tested scenario
+    :type scenario: behave.model.Scenario
     :raises exceptions.IOError: if DNF cannot be configured
 
     """
+    context.releasever_option = None
+    context.installroot_option = None
     with dnf.Base() as base:
         context.configfn = base.conf.config_file_path
     configbackup = tempfile.NamedTemporaryFile(
@@ -62,24 +67,6 @@ def before_all(context):
         shutil.copyfileobj(configfile, configbackup)
     context.backupfn = configbackup.name
     open(context.configfn, 'wt').close()
-    # Build DNF's cache.
-    with dnf.Base() as base:
-        base.read_all_repos()
-        base.fill_sack()
-
-
-# FIXME: https://bitbucket.org/logilab/pylint/issue/535
-def before_scenario(context, scenario):  # pylint: disable=unused-argument
-    """Do the preparation that must be done before every scenario.
-
-    :param context: the context as described in the environment file
-    :type context: behave.runner.Context
-    :param scenario: the next tested scenario
-    :type scenario: behave.model.Scenario
-
-    """
-    context.releasever_option = None
-    context.installroot_option = None
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
@@ -90,21 +77,8 @@ def after_scenario(context, scenario):  # pylint: disable=unused-argument
     :type context: behave.runner.Context
     :param scenario: the next tested scenario
     :type scenario: behave.model.Scenario
-    :raises exceptions.OSError: if the configured install root cannot be
-       removed
-
-    """
-    if context.installroot_option:
-        shutil.rmtree(context.installroot_option)
-
-
-def after_all(context):
-    """Do the cleanup that can be done at the very end.
-
-    :param context: the context as described in the environment file
-    :type context: behave.runner.Context
-    :raises exceptions.OSError: if the DNF configuration backup cannot
-       be removed
+    :raises exceptions.OSError: if the DNF configuration backup or the
+       configured install root cannot be removed
     :raises exceptions.IOError: if the original DNF configuration cannot
        be restored
 
@@ -116,3 +90,5 @@ def after_all(context):
             pass
         os.remove(context.backupfn)
         context.backupfn = None
+    if context.installroot_option:
+        shutil.rmtree(context.installroot_option)
