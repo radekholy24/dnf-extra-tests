@@ -19,3 +19,9 @@ Feature: Load configuration
   Scenario: Load default file
      When I execute DNF with the default configuration
      Then I should have the default configuration file loaded
+
+  Scenario: Load guest's file if the root is different
+     When I execute DNF with the following configuration:
+       | Option        | Value                |
+       | --installroot | /tmp/dnf-extra-tests |
+     Then I should have the guest's default configuration file loaded
