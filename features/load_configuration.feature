@@ -38,9 +38,16 @@ Feature: Load configuration
        | --installroot | /tmp/dnf-extra-tests |
      Then I should have the guest's default configuration file loaded
 
-  Scenario: Load custom guest's file if the root is different
+  Scenario: Load custom host's file if the root is different
      When I execute DNF with the following configuration:
        | Option        | Value                     |
        | --config      | /tmp/dnf-extra-tests.conf |
        | --installroot | /tmp/dnf-extra-tests      |
      Then I should have the /tmp/dnf-extra-tests.conf configuration file loaded
+
+  Scenario: Load custom relative host's file if the root is different
+     When I execute DNF with the following configuration:
+       | Option        | Value                |
+       | --config      | dnf-extra-tests.conf |
+       | --installroot | /tmp/dnf-extra-tests |
+     Then I should have the dnf-extra-tests.conf configuration file loaded
