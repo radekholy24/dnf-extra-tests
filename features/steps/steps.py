@@ -528,38 +528,62 @@ def _test_config(context, expected):
 
 
 @behave.then(  # pylint: disable=no-member
-    'I should have the events logged locally')
-def _test_logging(context):
+    'I should have the events logged {destination}')
+def _test_logging(context, destination):
     """Test whether events are logged locally.
 
     The "dnf" executable must be available.
 
     :param context: the context in which the function is called
     :type context: behave.runner.Context
+    :param destination: a description of the expected destination
+    :type destination: unicode
+    :raises dnf.exceptions.DownloadError: if a testing root cannot be
+       configured
     :raises exceptions.OSError: if DNF cannot be configured or if the
        executable cannot be executed
     :raises subprocess.CalledProcessError: if executable fails
     :raises exceptions.AssertionError: if the test fails
 
     """
+    def log_files(dirname):
+        """Iter over the DNF log files in a directory.
+
+        :param dirname: a name of the directory
+        :type dirname: unicode
+        :returns: names of the files
+        :rtype: generator[unicode]
+
+        """
+        basenames = []
+        with _suppress_enoent():
+            basenames = os.listdir(dirname)
+        for basename in basenames:
+            filename = os.path.join(dirname, basename)
+            if basename.startswith('dnf') and os.path.isfile(filename):
+                yield filename
     with dnf.Base() as base:
-        logdn = base.conf.logdir
-    basenames = []
-    with _suppress_enoent():
-        basenames = os.listdir(logdn)
-    for basename in basenames:
-        filename = os.path.join(logdn, basename)
-        if basename.startswith('dnf') and os.path.isfile(filename):
-            os.remove(filename)
+        logdn = chrooteddn = base.conf.logdir
     if context.installroot_option:
-        raise NotImplementedError('installroot not supported')
+        chrooteddn = os.path.join(
+            context.installroot_option, logdn.lstrip(os.path.sep))
+        _prepare_installroot(
+            context.installroot_option, context.releasever_option or '19')
+    for filename in log_files(logdn):
+        os.remove(filename)
+    for filename in log_files(chrooteddn):
+        os.remove(filename)
     _run_dnf(
         ['makecache'], context.config_option, context.installroot_option,
         context.releasever_option, quiet=True, assumeyes=True)
-    basenames = []
-    with _suppress_enoent():
-        basenames = os.listdir(logdn)
-    assert any(name.startswith('dnf') for name in basenames), 'nothing logged'
+    logged = any(log_files(logdn))
+    if destination == 'locally':
+        assert logged, 'nothing logged in the host'
+    elif destination == 'in the guest':
+        assert any(log_files(chrooteddn)), 'nothing logged in the guest'
+        assert not logged, 'something logged in the host'
+    else:
+        raise NotImplementedError('destination not supported')
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
