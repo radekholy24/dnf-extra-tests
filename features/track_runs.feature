@@ -21,7 +21,7 @@ Feature: Keep track of previous runs
      Then I should have the tracking information stored locally
 
   Scenario: Store the information in the guest if the root is different
-     When I execute DNF with the following configuration:
+     When I execute DNF with the following configuration on command line:
        | Option        | Value                |
        | --installroot | /tmp/dnf-extra-tests |
      Then I should have the tracking information stored in the guest

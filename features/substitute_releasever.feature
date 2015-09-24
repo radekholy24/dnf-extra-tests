@@ -22,19 +22,19 @@ Feature: Parametrize repositories by system release version
      Then I should have the $RELEASEVER configuration variable set to the host's release version
 
   Scenario: Assign the user-defined version to $RELEASEVER if specified
-     When I execute DNF with the following configuration:
+     When I execute DNF with the following configuration on command line:
        | Option       | Value |
        | --releasever | 20    |
      Then I should have the $RELEASEVER configuration variable set to “20”
 
   Scenario: Assign the guest's version to $RELEASEVER if the root is different
-     When I execute DNF with the following configuration:
+     When I execute DNF with the following configuration on command line:
        | Option        | Value                |
        | --installroot | /tmp/dnf-extra-tests |
      Then I should have the $RELEASEVER configuration variable set to the guest's release version
 
   Scenario: Assign the user-defined version to $RELEASEVER if specified even if the root is different
-     When I execute DNF with the following configuration:
+     When I execute DNF with the following configuration on command line:
        | Option        | Value                |
        | --installroot | /tmp/dnf-extra-tests |
        | --releasever  | 20                   |

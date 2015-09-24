@@ -21,7 +21,7 @@ Feature: Log selected events
      Then I should have the events logged locally
 
   Scenario: Log the events to the guest if the root is different
-     When I execute DNF with the following configuration:
+     When I execute DNF with the following configuration on command line:
        | Option        | Value                |
        | --installroot | /tmp/dnf-extra-tests |
      Then I should have the events logged in the guest

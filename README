@@ -38,10 +38,12 @@ attention:
 - test managing different install roots
 - test verification of signed packages
 - test loading of configurations
+- test configuration of repositories
 - test logging of events
 - test caching of metadata
 - test tracking of previous runs
 - test release version substitution
+- test support of plugins
 
 The tests are not in the final shape yet. Further tests are added on
 demand if they fit the purpose of the repository.
