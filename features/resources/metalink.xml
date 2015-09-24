@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<metalink version="3.0" xmlns="http://www.metalinker.org/">
+  <files>
+    <file name="repomd.xml">
+      <resources maxconnections="1">
+        <url protocol="file" type="file" location="CZ" preference="100" >file:///tmp/dnf-extra-tests1/repodata/repomd.xml</url>
+      </resources>
+    </file>
+  </files>
+</metalink>

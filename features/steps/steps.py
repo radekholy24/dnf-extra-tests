@@ -14,8 +14,6 @@
 
 """This module implements the feature steps.
 
-:var RESOURCESDN: a name of the directory containing testing resources
-:type RESOURCESDN: str
 :var REPODN: name of a testing repository directory
 :type REPODN: str
 :var GPGKEYFN: a name of an armored public GPG key which can be used to
@@ -44,13 +42,12 @@ import behave
 import createrepo_c
 import dnf.rpm
 
+import environment
 
-RESOURCESDN = os.path.join(
-    os.path.dirname(__file__), os.path.pardir, b'resources')
 
-REPODN = os.path.join(RESOURCESDN, b'repository')
+REPODN = os.path.join(environment.RESOURCESDN, b'repository')
 
-GPGKEYFN = os.path.join(RESOURCESDN, b'TEST-GPG-KEY')
+GPGKEYFN = os.path.join(environment.RESOURCESDN, b'TEST-GPG-KEY')
 
 GPGKEYID = '867B843D'
 
@@ -70,25 +67,6 @@ def _suppress_enoent():
             raise
 
 
-def _makedirs(name, exist_ok=False):
-    """Create a directory recusively.
-
-    :param name: name of the directory
-    :type name: unicode
-    :param exist_ok: don't fail if the directory already exists
-    :type exist_ok: bool
-    :raises exceptions.OSError: if the directory cannot be created
-
-    """
-    try:
-        os.makedirs(name)
-    except OSError as err:
-        if \
-                not exist_ok or \
-                err.errno != errno.EEXIST or not os.path.isdir(name):
-            raise
-
-
 def _path2url(path):
     """Convert a file path to an URL.
 
@@ -100,60 +78,6 @@ def _path2url(path):
     """
     return urlparse.urlunsplit(
         (b'file', b'', urllib.pathname2url(path), b'', b''))
-
-
-def _repo_config(baseurl, gpgcheck=None):
-    """Compose a repository configuration.
-
-    The ID of the repository is "dnf-extra-tests".
-
-    :param baseurl: a base URL of the repository
-    :type baseurl: str
-    :param gpgcheck: a value of the gpgcheck option
-    :type gpgcheck: bool | None
-    :returns: the configuration as a string
-    :rtype: str
-
-    """
-    lines = [
-        b'[dnf-extra-tests]\n'
-        b'baseurl={}\n'
-        b'metadata_expire=0\n'.format(baseurl)]
-    if gpgcheck is not None:
-        lines.append(b'gpgcheck={}\n'.format(gpgcheck and b'true' or b'false'))
-    return b''.join(lines)
-
-
-@contextlib.contextmanager
-def _temp_repo_config(baseurl, gpgcheck=None):
-    """Temporarily configure a repository.
-
-    The "dnf" executable must be available.
-
-    :param baseurl: a base URL of the repository
-    :type baseurl: str
-    :param gpgcheck: a value of the gpgcheck option
-    :type gpgcheck: bool | None
-    :returns: a context manager yielding ID of the repository
-    :rtype: contextmanager[unicode]
-    :raises exceptions.OSError: if the repository cannot be configured
-       or if the executable cannot be executed
-    :raises exceptions.IOError: if the repository cannot be configured
-
-    """
-    with dnf.Base() as base:
-        configdn = base.conf.reposdir[0]
-    _makedirs(configdn, exist_ok=True)
-    conffile = tempfile.NamedTemporaryFile('wt', suffix='.repo', dir=configdn)
-    with conffile:
-        conffile.write(_repo_config(baseurl, gpgcheck))
-        conffile.flush()
-        try:
-            yield 'dnf-extra-tests'
-        finally:
-            subprocess.call([
-                'dnf', '--quiet', '--disablerepo=*',
-                '--enablerepo=dnf-extra-tests', 'clean', 'metadata'])
 
 
 def _run_rpm(args, root=None, quiet=False):
@@ -180,48 +104,27 @@ def _run_rpm(args, root=None, quiet=False):
     subprocess.check_call(cmdline)
 
 
-def _run_dnf(  # pylint: disable=too-many-arguments
-        args, configfn=None, root=None, releasever=None, quiet=False,
-        assumeyes=False):
-    """Run DNF from command line.
+def _remove_gpg_pubkey(shortid, root=None, quiet=False):
+    """Remove a public GPG key.
 
-    The "dnf" executable must be available.
+    The "rpm" executable must be available.
 
-    :param args: additional command line arguments
-    :type args: list[unicode]
-    :param configfn: a name of a configuration file
-    :type configfn: unicode | None
-    :param assumeyes: set the --assumeyes option
-    :type assumeyes: bool
-    :param root: a value of the --installroot option
+    :param shortid: the short ID of the key
+    :type shortid: unicode
+    :param root: a value of the --root option passed to rpm
     :type root: unicode | None
-    :param releasever: a value of the --releasever option
-    :type releasever: unicode | None
-    :param quiet: set the --queit option
+    :param quiet: set the --quiet option of rpm
     :type quiet: bool
-    :returns: the output of the command
-    :rtype: str
     :raises exceptions.OSError: if the executable cannot be executed
-    :raises subprocess.CalledProcessError: if executable fails
+    :raises subprocess.CalledProcessError: if the executable fails
 
     """
-    cmdline = ['dnf'] + args
-    if releasever:
-        cmdline.insert(1, '--releasever={}'.format(releasever))
-    if quiet:
-        cmdline.insert(1, '--quiet')
-    if root:
-        cmdline.insert(1, '--installroot={}'.format(root))
-    if configfn:
-        cmdline.insert(1, '--config={}'.format(configfn))
-    if assumeyes:
-        cmdline.insert(1, '--assumeyes')
-    return subprocess.check_output(cmdline)
+    _run_rpm(['--erase', 'gpg-pubkey-{}'.format(shortid.lower())], root, quiet)
 
 
 def _run_dnf_install(  # pylint: disable=too-many-arguments
         specs, configfn=None, root=None, releasever=None, quiet=False,
-        assumeyes=False):
+        assumeyes=False, disablerepo=None, enablerepo=None):
     """Run DNF's install command from command line.
 
     The "dnf" executable must be available.
@@ -238,14 +141,57 @@ def _run_dnf_install(  # pylint: disable=too-many-arguments
     :type quiet: bool
     :param assumeyes: set the --assumeyes option
     :type assumeyes: bool
+    :param disablerepo: a pattern matching the repositories to be
+        disabled
+    :type disablerepo: unicode | None
+    :param enablerepo: a pattern matching the repositories to be
+        enabled
+    :type enablerepo: unicode | None
     :returns: the output of the command
     :rtype: str
     :raises exceptions.OSError: if the executable cannot be executed
     :raises subprocess.CalledProcessError: if executable fails
 
     """
-    return _run_dnf(
-        ['install'] + specs, configfn, root, releasever, quiet, assumeyes)
+    return environment.run_dnf(
+        ['install'] + specs, configfn, root, releasever, quiet, assumeyes,
+        disablerepo, enablerepo)
+
+
+def _run_dnf_remove(  # pylint: disable=too-many-arguments
+        specs, configfn=None, root=None, releasever=None, quiet=False,
+        assumeyes=False, disablerepo=None, enablerepo=None):
+    """Run DNF's remove command from command line.
+
+    The "dnf" executable must be available.
+
+    :param specs: specifications of the packages to be removed
+    :type specs: list[unicode]
+    :param configfn: a name of a configuration file
+    :type configfn: unicode | None
+    :param root: a value of the --installroot option
+    :type root: unicode | None
+    :param releasever: a value of the --releasever option
+    :type releasever: unicode | None
+    :param quiet: set the --quiet option
+    :type quiet: bool
+    :param assumeyes: set the --assumeyes option
+    :type assumeyes: bool
+    :param disablerepo: a pattern matching the repositories to be
+        disabled
+    :type disablerepo: unicode | None
+    :param enablerepo: a pattern matching the repositories to be
+        enabled
+    :type enablerepo: unicode | None
+    :returns: the output of the command
+    :rtype: str
+    :raises exceptions.OSError: if the executable cannot be executed
+    :raises subprocess.CalledProcessError: if the executable fails
+
+    """
+    return environment.run_dnf(
+        ['remove'] + specs, configfn, root, releasever, quiet, assumeyes,
+        disablerepo, enablerepo)
 
 
 def _run_repoquery(
@@ -275,7 +221,7 @@ def _run_repoquery(
     if repo:
         args.insert(1, repo)
         args.insert(1, '--repoid')
-    return _run_dnf(args, configfn, root, releasever, quiet)
+    return environment.run_dnf(args, configfn, root, releasever, quiet)
 
 
 def _prepare_installroot(name, releasever='19'):
@@ -354,9 +300,9 @@ def _configure_dnf_defaults(context):  # pylint: disable=unused-argument
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
 @behave.when(  # pylint: disable=no-member
-    'I execute DNF with the following configuration')
+    'I execute DNF with the following configuration on command line')
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
-def _configure_dnf_customs(context):  # pylint: disable=unused-argument
+def _configure_dnf_cli(context):  # pylint: disable=unused-argument
     """Configure custom DNF options that should be used when executed.
 
     :param context: the context in which the function is called
@@ -377,6 +323,79 @@ def _configure_dnf_customs(context):  # pylint: disable=unused-argument
             context.installroot_option = value
         else:
             raise NotImplementedError('configuration not supported')
+
+
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
+@behave.when(  # pylint: disable=no-member
+    'I execute DNF with the following configuration in the default config')
+def _configure_dnf_config(context):
+    """Configure custom DNF options that should be set in a config file.
+
+    :param context: the context in which the function is called
+    :type context: behave.runner.Context
+    :raises exceptions.ValueError: if the context has no table
+
+    """
+    if not context.table:
+        raise ValueError('table not found')
+    if context.table.headings != ['Option', 'Value']:
+        raise NotImplementedError('configuration format not supported')
+    with open(context.configfn, 'at') as configfile:
+        configfile.write(b'[main]\n')
+        for option, value in context.table:
+            configfile.write('{}={}\n'.format(option, value).encode('utf-8'))
+
+
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
+@behave.when(  # pylint: disable=no-member
+    'I execute DNF with a repository {repoid} of which {urltype} is {url}')
+def _configure_baseurl(context, repoid, urltype, url):
+    """Configure a repository with a base URL.
+
+    :param context: the context in which the function is called
+    :type context: behave.runner.Context
+    :param repoid: the ID of the repository
+    :type repoid: unicode
+    :param urltype: a description of the type of the repository URL
+    :type urltype: unicode
+    :param url: the URL of the repository
+    :type url: unicode
+    :raises exceptions.OSError: if the repository cannot be configured
+    :raises exceptions.IOError: if the repository cannot be configured
+
+    """
+    if urltype == 'baseurl':
+        config = environment.TempRepoConfig(url.encode('utf-8'))
+    elif urltype in {'metalink', 'mirrorlist', 'gpgkey'}:
+        scheme, netloc, path, params, query, fragment = urlparse.urlparse(url)
+        if scheme != 'file' or netloc or params or query or fragment:
+            raise NotImplementedError('url not supported')
+        if urltype == 'metalink':
+            config = environment.TempRepoConfig(metalink=url.encode('utf-8'))
+            basename = 'metalink.xml'
+        elif urltype == 'mirrorlist':
+            config = environment.TempRepoConfig(mirrorlist=url.encode('utf-8'))
+            basename = 'mirrorlist.txt'
+        elif urltype == 'gpgkey':
+            config = environment.TempRepoConfig(
+                _path2url(REPODN), gpgcheck=True, gpgkey=url.encode('utf-8'))
+            basename = 'TEST-GPG-KEY'
+        dirname, basename_ = os.path.split(urllib.url2pathname(path))
+        if basename_ != basename:
+            raise NotImplementedError('name not supported')
+        resource = environment.TempResourceCopy(basename, dirname)
+        if context.temp_resource:
+            raise NotImplementedError('multiple resources not supported')
+        resource.create()
+        context.temp_resource = resource
+    else:
+        raise NotImplementedError('type not supported')
+    if repoid != config.REPOID:
+        raise NotImplementedError('ID not supported')
+    if context.temp_repo:
+        raise NotImplementedError('multiple repos not supported')
+    config.add()
+    context.temp_repo = config
 
 
 # FIXME: https://bitbucket.org/logilab/pylint/issue/535
@@ -420,8 +439,8 @@ def _test_management(context, root):
                 arch=package.arch)
             assert installed, '{} root not managed'.format(root)
     finally:
-        _run_dnf(
-            ['remove', 'foo'], root=context.installroot_option,
+        _run_dnf_remove(
+            ['foo'], root=context.installroot_option,
             releasever=context.releasever_option, quiet=True, assumeyes=True)
 
 
@@ -477,15 +496,16 @@ def _test_verification(context, packages, keys):
     _run_rpm(
         ['--import', GPGKEYFN.decode()], root=translate_root(keys), quiet=True)
     try:
-        with _temp_repo_config(_path2url(REPODN), gpgcheck=True):
+        with environment.TempRepoConfig(_path2url(REPODN), gpgcheck=True):
             _run_dnf_install(
                 ['signed-foo'], context.config_option,
                 translate_root(packages), context.releasever_option,
                 quiet=True, assumeyes=True)
+        _run_dnf_remove(
+            ['signed-foo'], root=translate_root(packages),
+            releasever=context.releasever_option, quiet=True, assumeyes=True)
     finally:
-        _run_rpm(
-            ['--erase', 'gpg-pubkey-{}'.format(GPGKEYID.lower())],
-            root=translate_root(keys), quiet=True)
+        _remove_gpg_pubkey(GPGKEYID, translate_root(keys), quiet=True)
 
 
 @behave.then(  # pylint: disable=no-member
@@ -519,12 +539,141 @@ def _test_config(context, expected):
     if context.installroot_option:
         _prepare_installroot(
             context.installroot_option, context.releasever_option or '19')
-    _makedirs(os.path.dirname(os.path.abspath(configfn)), exist_ok=True)
+    environment.makedirs(
+        os.path.dirname(os.path.abspath(configfn)), exist_ok=True)
     with open(configfn, 'at') as configfile:
-        configfile.write(_repo_config(_path2url(REPODN)))
+        configfile.write(environment.repo_config(_path2url(REPODN)))
     _test_repo_equals_dir(
         'dnf-extra-tests', context.installroot_option,
-        context.releasever_option, REPODN, 'config not loaded', configfn)
+        context.releasever_option, REPODN, 'config not loaded',
+        context.config_option)
+
+
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
+@behave.then(  # pylint: disable=no-member
+    "I should have the content of the repository {repoid} at host's {path} "
+    'being available')
+def _test_repository(context, repoid, path):
+    """Test whether a local repository is available.
+
+    The "dnf" executable and its "repoquery" plugin must be available.
+
+    :param context: the context in which the function is called
+    :type context: behave.runner.Context
+    :param repoid: the ID of the repository
+    :type repoid: unicode
+    :param path: a name of the repository directory
+    :type path: unicode
+    :raises dnf.exceptions.DownloadError: if a testing root cannot be
+       configured
+    :raises exceptions.OSError: if DNF cannot be configured or if the
+       executable cannot be executed
+    :raises shutil.Error: if DNF cannot be configured
+    :raises exceptions.ValueError: if the repository or the directory
+       cannot be queried
+    :raises exceptions.AssertionError: if the test fails
+
+    """
+    if context.installroot_option:
+        _prepare_installroot(
+            context.installroot_option, context.releasever_option or '19')
+    with _suppress_enoent():
+        shutil.rmtree(path)
+    shutil.copytree(REPODN, path)
+    try:
+        _test_repo_equals_dir(
+            repoid, context.installroot_option, context.releasever_option,
+            path.encode('utf-8'), 'repo not available', context.config_option)
+    finally:
+        shutil.rmtree(path)
+
+
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
+@behave.then(  # pylint: disable=no-member
+    'I should have a GPG key {shortid} imported to the {destination} and used '
+    'to verify packages')
+def _test_import(context, shortid, destination):
+    """Test whether a GPG key is imported from a repository to the host.
+
+    The "dnf" and "rpm" executables must be available.
+
+    :param context: the context in which the function is called
+    :type context: behave.runner.Context
+    :param shortid: the short ID of the key
+    :type shortid: unicode
+    :param destination: a description of the expected import destination
+    :type destination: unicode
+    :raises dnf.exceptions.DownloadError: if a testing root cannot be
+       configured
+    :raises exceptions.OSError: if an executable cannot be executed
+    :raises subprocess.CalledProcessError: if an executable fails
+
+    """
+    def translate_root(description):
+        """Convert from a root description to a root path.
+
+        :param description: the root description
+        :type description: unicode
+        :returns: the root path
+        :rtype: unicode
+        :raises exceptions.ValueError: if a guest is described but its
+           path is not specified
+
+        """
+        if description == 'host':
+            return
+        elif description == 'guest':
+            if not context.installroot_option:
+                raise ValueError('guest path not set')
+            return context.installroot_option
+        else:
+            raise NotImplementedError('root description not supported')
+    if context.installroot_option:
+        _prepare_installroot(
+            context.installroot_option, context.releasever_option or '19')
+    _run_dnf_install(
+        ['signed-foo'], context.config_option, context.installroot_option,
+        context.releasever_option, quiet=True, assumeyes=True)
+    try:
+        _remove_gpg_pubkey(shortid, translate_root(destination), quiet=True)
+    finally:
+        _run_dnf_remove(
+            ['signed-foo'], root=context.installroot_option,
+            releasever=context.releasever_option, quiet=True, assumeyes=True)
+
+
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
+@behave.then(  # pylint: disable=no-member
+    "I should have the .repo files loaded from the host's {dirname}")
+def _test_reposdir(context, dirname):
+    """Test whether .repo files are loaded from a host's directory.
+
+    The "dnf" executable and its "repoquery" plugin must be available.
+
+    :param context: the context in which the function is called
+    :type context: behave.runner.Context
+    :param dirname: a name of the directory
+    :type dirname: unicode
+    :raises dnf.exceptions.DownloadError: if a testing root cannot be
+       configured
+    :raises exceptions.OSError: if DNF cannot be configured or if the
+       executable cannot be executed
+    :raises exceptions.IOError: if DNF cannot be configured
+    :raises exceptions.ValueError: if a repository or the directory
+       cannot be queried
+    :raises exceptions.AssertionError: if the test fails
+
+    """
+    if dirname == 'default directory':
+        dirname = None
+    if context.installroot_option:
+        _prepare_installroot(
+            context.installroot_option, context.releasever_option or '19')
+    with environment.TempRepoConfig(_path2url(REPODN), dirname=dirname):
+        _test_repo_equals_dir(
+            'dnf-extra-tests', context.installroot_option,
+            context.releasever_option, REPODN, '.repo not loaded',
+            context.config_option)
 
 
 @behave.then(  # pylint: disable=no-member
@@ -573,8 +722,8 @@ def _test_logging(context, destination):
         os.remove(filename)
     for filename in log_files(chrooteddn):
         os.remove(filename)
-    _run_dnf(
-        ['makecache'], context.config_option, context.installroot_option,
+    environment.run_dnf_clean_metadata(
+        context.config_option, context.installroot_option,
         context.releasever_option, quiet=True, assumeyes=True)
     logged = any(log_files(logdn))
     if destination == 'locally':
@@ -598,7 +747,8 @@ def _test_caching(context, destination):
     :type context: behave.runner.Context
     :param destination: a description of the expected destination
     :type destination: unicode
-    :raises exceptions.OSError: if DNF cannot be configured
+    :raises exceptions.OSError: if DNF cannot be configured or if the
+       executable cannot be executed
     :raises subprocess.CalledProcessError: if the executable fails
     :raises exceptions.AssertionError: if the test fails
 
@@ -614,7 +764,7 @@ def _test_caching(context, destination):
         shutil.rmtree(cachedir)
     with _suppress_enoent():
         shutil.rmtree(chrooteddn)
-    _run_dnf(
+    environment.run_dnf(
         ['makecache'], context.config_option, context.installroot_option,
         context.releasever_option, quiet=True, assumeyes=True)
     content = []
@@ -643,6 +793,7 @@ def _test_tracking(context, destination):
     :type destination: unicode
     :raises exceptions.OSError: if DNF cannot be configured
     :raises shutil.Error: if DNF cannot be configured
+    :raises exceptions.OSError: if the executable cannot be executed
     :raises subprocess.CalledProcessError: if the executable fails
     :raises exceptions.AssertionError: if the test fails
 
@@ -661,7 +812,7 @@ def _test_tracking(context, destination):
             shutil.copytree(persistdn, backuppersistdn)
         with _suppress_enoent():
             shutil.rmtree(persistdn)
-        _run_dnf(
+        environment.run_dnf(
             ['group', 'install', 'Books and Guides'], context.config_option,
             context.installroot_option, releasever, quiet=True, assumeyes=True)
         content = []
@@ -703,6 +854,7 @@ def _test_releasever(context, expected):
        executable cannot be executed
     :raises exceptions.IOError: if DNF cannot be configured
     :raises exceptions.ValueError: if the $RELEASEVER cannot be tested
+    :raises subprocess.CalledProcessError: if the executable fails
     :raises exceptions.AssertionError: if the test fails
 
     """
@@ -728,9 +880,74 @@ def _test_releasever(context, expected):
         # Prepare an the install root.
         _prepare_installroot(context.installroot_option, guest_releasever)
     try:
-        with _temp_repo_config(repourl) as repoid:
+        with environment.TempRepoConfig(repourl):
             _test_repo_equals_dir(
-                repoid, context.installroot_option, context.releasever_option,
-                repodn, '$RELEASEVER not correct', context.config_option)
+                environment.TempRepoConfig.REPOID, context.installroot_option,
+                context.releasever_option, repodn, '$RELEASEVER not correct',
+                context.config_option)
     finally:
         shutil.rmtree(os.path.dirname(repodn))
+
+
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
+@behave.then(  # pylint: disable=no-member
+    'I should have the plugins at {path} being loaded')
+def _test_plugins(context, path):
+    """Test whether particular plugins are being loaded.
+
+    The "dnf" executable must be available.
+
+    :param context: the context in which the function is called
+    :type context: behave.runner.Context
+    :param path: a name of the plugins directory
+    :type path: unicode
+    :raises exceptions.OSError: if DNF cannot be configured or if the
+       executable cannot be executed
+    :raises exceptions.IOError: if DNF cannot be configured
+    :raises subprocess.CalledProcessError: if the executable fails
+    :raises exceptions.AssertionError: if the test fails
+
+    """
+    with dnf.Base() as base:
+        plugindn = base.conf.pluginpath[0]
+    if path != "the host's default path" and path.startswith("host's "):
+        plugindn = path[7:]
+    with environment.TempResourceCopy('dnf-extra-tests.py', plugindn):
+        expected = b'An output of the dnf-extra-tests plugin: This is unique.'
+        output = environment.run_dnf_clean_metadata(
+            context.config_option, context.installroot_option,
+            context.releasever_option, quiet=True, assumeyes=True)
+        assert expected in output, 'plugin not loaded'
+
+
+# FIXME: https://bitbucket.org/logilab/pylint/issue/535
+@behave.then(  # pylint: disable=no-member
+    'I should have the plugins configuration path set to {path}')
+def _test_plugins_conf(context, path):
+    """Test whether the plugins configuration path is set correctly.
+
+    The "dnf" executable must be available.
+
+    :param context: the context in which the function is called
+    :type context: behave.runner.Context
+    :param path: the expected path
+    :type path: unicode
+    :raises exceptions.OSError: if DNF cannot be configured or if the
+       executable cannot be executed
+    :raises exceptions.IOError: if DNF cannot be configured
+    :raises subprocess.CalledProcessError: if the executable fails
+    :raises exceptions.AssertionError: if the test fails
+
+    """
+    with dnf.Base() as base:
+        plugindn = base.conf.pluginpath[0]
+        confdn = base.conf.pluginconfpath[0]
+    if path != "the host's default" and path.startswith("host's "):
+        confdn = path[7:]
+    with environment.TempResourceCopy('dnf-extra-tests.py', plugindn), \
+            environment.TempResourceCopy('dnf-extra-tests.conf', confdn):
+        expected = b"dnf-extra-tests plugin's option is configured."
+        output = environment.run_dnf_clean_metadata(
+            context.config_option, context.installroot_option,
+            context.releasever_option, quiet=True, assumeyes=True)
+        assert expected in output, 'path not set'

@@ -21,7 +21,7 @@ Feature: Manage different install roots
      Then I should manage the system root
 
   Scenario: Manage a custom install root
-     When I execute DNF with the following configuration:
+     When I execute DNF with the following configuration on command line:
        | Option        | Value                |
        | --installroot | /tmp/dnf-extra-tests |
      Then I should manage the custom install root

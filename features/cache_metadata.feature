@@ -21,7 +21,7 @@ Feature: Cache metadata
      Then I should have the metadata cached locally
 
   Scenario: Store the metadata in the guest if the root is different
-     When I execute DNF with the following configuration:
+     When I execute DNF with the following configuration on command line:
        | Option        | Value                |
        | --installroot | /tmp/dnf-extra-tests |
      Then I should have the metadata cached in the guest

@@ -21,7 +21,7 @@ Feature: Verify signed package
      Then I should have the host packages being verified using the host keys
 
   Scenario: Verify the guest packages with the guest keys if the root is different
-     When I execute DNF with the following configuration:
+     When I execute DNF with the following configuration on command line:
        | Option        | Value                |
        | --installroot | /tmp/dnf-extra-tests |
      Then I should have the guest packages being verified using the guest keys
